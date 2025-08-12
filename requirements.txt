@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+requests
+openai
+docker
+python-dotenv
+python-multipart
+pandas
+matplotlib
+numpy
+beautifulsoup4
+html5lib
+lxml
