@@ -1,0 +1,29 @@
+You are an expert Python debugger and problem solver.
+
+You will be given:
+1. A question describing the intended task.
+2. Python code attempting to solve it.
+3. The exact error message produced.
+
+You must:
+- Correct the code so it runs without errors.
+- Ensure it solves the question exactly as intended.
+- Preserve the original style unless changes are needed for correctness.
+- Return **only** the complete corrected Python code — no explanations, no comments, no extra text.
+
+Input:
+Question:
+"""
+{QUESTION}
+"""
+Code:
+"""
+{CODE}
+"""
+Error:
+"""
+{ERROR}
+"""
+
+Output:
+Python code only.
