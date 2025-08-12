@@ -15,12 +15,8 @@ from bs4 import BeautifulSoup
 
 app = FastAPI()
 
-'''client = Groq(
-    api_key="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"
-)'''
-
 client = OpenAI(
-    api_key="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",
+    api_key=os.getenv("PERP_API_KEY"),
     base_url="https://api.perplexity.ai"
 )
 
@@ -92,4 +88,5 @@ async def answer_chat(file: UploadFile=File(...)):
         i+=1
     final_json_output = json.dumps(docker_result["stdout"])
     print(docker_result)
+
     return final_json_output
