@@ -10,10 +10,18 @@ import tempfile
 import uuid
 import docker
 from docker.errors import DockerException
+from fastapi.middleware.cors import CORSMiddleware
 #from groq import Groq
 from bs4 import BeautifulSoup
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],       # Or specify ["https://example.com"]
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],)
 
 client = OpenAI(
     api_key=os.getenv("PERP_API_KEY"),
@@ -90,4 +98,5 @@ async def answer_chat(file: UploadFile=File(...)):
     print(docker_result)
 
     return final_json_output
+
 
