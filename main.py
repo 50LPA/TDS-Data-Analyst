@@ -10,7 +10,7 @@ import tempfile
 import uuid
 import docker
 from docker.errors import DockerException
-from groq import Groq
+#from groq import Groq
 from bs4 import BeautifulSoup
 
 app = FastAPI()
@@ -90,3 +90,4 @@ async def answer_chat(file: UploadFile=File(...)):
     print(docker_result)
 
     return final_json_output
+
