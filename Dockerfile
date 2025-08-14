@@ -1,17 +1,22 @@
+# Use official Python base image
 FROM python:3.11-slim
 
-# Prevent Python from writing pyc files & buffering output
+# Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# Set work directory inside container
+# Set working directory
 WORKDIR /app
 
-# Copy requirements first (caching optimization)
+# Install dependencies
 COPY requirements.txt .
-
-# Install Python dependencies inside the image
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Command will be overridden when running the container
-CMD ["python3"]
+# Copy the rest of the application code
+COPY . .
+
+# Expose port (Render automatically sets $PORT)
+EXPOSE 8000
+
+# Start FastAPI with Uvicorn
+CMD ["uvicorn", "practice:app", "--host", "0.0.0.0", "--port", "8000"]
