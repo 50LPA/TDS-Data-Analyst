@@ -1,102 +1,121 @@
-import requests
-from fastapi import FastAPI, UploadFile, File, HTTPException
 from openai import OpenAI
+from fastapi import FastAPI, File, UploadFile
 import os
-import re
-import logging
+import uuid
 import subprocess
 import json
-import tempfile
-import uuid
-import docker
-from docker.errors import DockerException
 from fastapi.middleware.cors import CORSMiddleware
-#from groq import Groq
-from bs4 import BeautifulSoup
-
+import shutil
+from typing import List
 app = FastAPI()
 
 app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],       # Or specify ["https://example.com"]
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],)
+CORSMiddleware,
+allow_origins=["*"],       # Or specify ["https://example.com"]
+allow_credentials=True,
+allow_methods=["*"],
+allow_headers=["*"],)
 
 client = OpenAI(
-    api_key=os.getenv("PERP_API_KEY"),
-    base_url="https://api.perplexity.ai"
+api_key=os.getenv("PERP_API_KEY"),
+base_url="https://api.perplexity.ai"
 )
 
+'''client = genai.Client(
+    api_key=os.getenv("GENAI_API_KEY")
+)'''
 with open("prompt3.txt", "r") as f:
-    prompt=f.read()
+    prompts = f.read()
+
 with open("prompt4.txt", "r") as f:
-    prompt_check=f.read()
+    prompta = f.read()
 
-async def run_python_in_docker(script: str):
-    """
-    Executes a Python script inside a secure, pre-built Docker container.
-    """
-    with tempfile.TemporaryDirectory() as temp_dir:
-        script_name = f"{uuid.uuid4().hex}.py"  # Random unique name
-        script_path = os.path.join(temp_dir, script_name)
-        with open(script_path, "w", encoding="utf-8") as f:
-            f.write(script)
-        # 2️⃣ Run it inside Docker
-        result = subprocess.run(
-            [
-                "docker", "run", "--rm",
-                "-v", f"{temp_dir}:/app:ro",  # mount as read-only
-                "code-runner",
-                "python3", f"/app/{script_name}"
-            ],
-            capture_output=True,
-            text=True,
-            timeout=10  # prevent hanging
-        )
+def extract_json(file):
+    lines = file.splitlines()
+    json_str = "\n".join(lines[1:-1])
 
-        return {"stdout": result.stdout, "stderr": result.stderr}
-    
-def extract_code(raw: str) -> str:
-    lines = raw.strip().splitlines()
-    if lines[0].startswith("```python") or lines[0].startswith("```"):
-        lines = lines[1:]  # Remove first line (```python)
-    if lines[-1] == "```":
-        lines = lines[:-1]  # Remove last line (```)
-    return "\n".join(lines)
+    # Parse JSON
+    data = json.loads(json_str)
+    return data
 
-@app.post("/chat")
-async def answer_chat(file: UploadFile=File(...)):
-    question_bytes= await file.read()
-    question_text=question_bytes.decode("utf-8")
+def code_exec(code, requirements):
+
+    script_name = f"{uuid.uuid4().hex}.py"  # Random unique name
+    with open(f"uploads/{script_name}", "w", encoding="utf-8") as f:
+        f.write(code)
+
+    req_file = None
+    if requirements:
+        req_file = "temp_requirements.txt"
+        with open(f"uploads/{req_file}", "w", encoding="utf-8") as f:
+            f.write(requirements)
+    try:
+        exec("pip install -r uploads/temp_requirements.txt")
+    except:
+        pass
+    result = subprocess.run(f"python uploads/{script_name}", shell=True, capture_output=True, text=True)
+
+    return {"stdout": result.stdout, "stderr": result.stderr}
+@app.post("/answer")
+async def answer_chat(files: List[UploadFile] = File(...)):
+    folder = "uploads"
+    direct=subprocess.run("mkdir -p uploads", shell=True, capture_output=True, text=True)
+    results = []
+    for file in files:
+        contents = await file.read()
+        # You can save the file or process it
+        with open(f"uploads/{file.filename}", "wb") as f:
+            f.write(contents)
+        results.append(file.filename)
+    with open(f"{folder}/question.txt", "r") as f:
+        question_text=f.read()
     response = client.chat.completions.create(model= "sonar-pro",
-                                            messages=[
-                                                {"role": "system", "content" : prompt},
-                                                {"role": "user", "content" : f"""User Question:{question_text},
-                                                Please generate the complete Python script now."""}
-                                            ])
-    raw=response.choices[0].message.content
-    code=extract_code(raw)
+                                        messages=[{"role": "system", "content" : prompts},
+                                                    {"role": "user", "content": f"""question: {question_text},
+                                                     "uploaded_files": {",".join(results)},
+                                                    Generate Python code that collects the data needed for the question, saves it to {folder}/data.csv, and generates {folder}/metadata.txt with the required metadata. Do not answer the question — only collect the data and metadata. """
+                                                    }])
+
+    '''response = client.models.generate_content(
+  model='gemini-2.5-flash',
+  contents=f"""System_prompt: {prompts},
+  User Question: {question_text},
+  Uploaded Files: {','.join(results)},
+  Generate Python code that collects the data needed for the question, saves it to {folder}/data.csv, and generates {folder}/metadata.txt with the required metadata. Do not answer the question — only collect the data and metadata. """
+)'''
+    result=json.loads(response.choices[0].message.content)
+    #result=extract_json(response.text)
+    code = result["code"]
     print(code)
-    docker_result=await run_python_in_docker(code)
-    max_call=2
-    i=1
-    while i<=max_call:
-        if docker_result["stderr"]=="":
-            break
-        corrected_response = client.chat.completions.create(model= "sonar-pro",
-                                                        messages=[{"role":"system", "content":prompt_check},
-                                                                {"role":"user","content": f""" Question : {question_text},
-                                                                python script: {code},
-                                                                Error: {docker_result['stderr']},
-                                                                Please return the corrected python script."""}])
-        raw_c=corrected_response.choices[0].message.content
-        code_c=extract_code(raw_c)
-        docker_result=await run_python_in_docker(code_c)
-        i+=1
-    final_json_output = json.dumps(docker_result["stdout"])
-    print(docker_result)
+    requirements = ",".join(result["libraries"])
+    questions = "\n".join(result["questions"])
+    exec_result = code_exec(code, requirements)
+    response2 = client.chat.completions.create(model= "sonar-pro",
+                                    messages=[{"role": "system", "content" : prompta},
+                                                {"role": "user", "content": f"""raw_question: {question_text},
+                                                interpreted question: {questions}
+                                                """
+                                                }])
+    
+    '''response2 = client.models.generate_content(
+  model='gemini-2.5-flash',
+  contents=f"""System_prompt: {prompts},
+  raw_question: {question_text},
+  interpreted question: {questions}"""
+)'''
+    result2=json.loads(response2.choices[0].message.content)
+    #result2 = extract_json(response2.text)
+    code2 = result2["code"]
+    print(code2)
+    requirements2 = ",".join(result2["libraries"])
+    exec_result2 = code_exec(code2, requirements2)
 
-    return final_json_output
+    # Path to your JSON file
+    file_path = os.path.join(".", "uploads", "result.json")
 
 
+    # Open and load the JSON file
+    with open(file_path, "r", encoding="utf-8") as f:
+        answers = json.load(f)  # This converts JSON → Python dict/list
+    shutil.rmtree(folder, ignore_errors=True)  # Clean up the uploads folder
+    return answers
